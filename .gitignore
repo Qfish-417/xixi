@@ -1,10 +1,78 @@
-# python
-venv/
-__pycache__/
-*.pyc
+# =====================================
+# Java 后端
+# =====================================
+
+# 编译输出
+target/
+out/
+*.class
+
+# IDE 配置
+.idea/
+*.iml
+*.ipr
+*.iws
+.settings/
+.project
+.classpath
+.vscode/
+.mvn/
+
+# Maven / Gradle 构建产物
+log/
+dependency-reduced-pom.xml
+build/
+.gradle/
+gradle-app.setting
+!gradle-wrapper.jar
+
+# Spring Boot 脂肪包（通常不提交）
+*.jar
+*.war
+*.ear
+
+# =====================================
+# 前端 (Vue/React/Angular 等)
+# =====================================
+
+# 依赖目录
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 构建输出
+dist/
+build/
+.vite/
+.cache/
+.parcel-cache/
+
+# 环境变量
+.env.local
+.env.*.local
+
+# =====================================
+# 通用
+# =====================================
 
 # 日志文件
 *.log
 
-# 系统文件
+# 操作系统文件
 .DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.swp
+*.swo
+*~
+.secret
+
+# 本地配置文件
+application-local.properties
+application-dev.properties
+application-local.yml
+application-dev.yml
