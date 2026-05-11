@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.3.0
+    container_name: manju-mysql
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
+      MYSQL_DATABASE: manju_agent
+      MYSQL_USER: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    networks:
+      - manju-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-18T22-51-28Z
+    container_name: manju-minio
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - manju-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  manju-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: manju-agent
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_URL: jdbc:mysql://mysql:3306/manju_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+      MYSQL_USERNAME: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your-api-key}
+      OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com}
+      JIMENG_API_URL: ${JIMENG_API_URL:-https://api.jimeng.com}
+      JIMENG_API_KEY: ${JIMENG_API_KEY:-your-api-key}
+      TEXT_TO_IMAGE_API_URL: ${TEXT_TO_IMAGE_API_URL:-https://api.example.com/text2image}
+      TEXT_TO_IMAGE_API_KEY: ${TEXT_TO_IMAGE_API_KEY:-your-api-key}
+      JWT_SECRET: ${JWT_SECRET:-manju-agent-secret-key-2024-secure-jwt-token}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - manju-network
+
+volumes:
+  mysql_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  manju-network:
+    driver: bridge

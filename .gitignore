@@ -1,0 +1,10 @@
+# python
+venv/
+__pycache__/
+*.pyc
+
+# 日志文件
+*.log
+
+# 系统文件
+.DS_Store

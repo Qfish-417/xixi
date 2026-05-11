@@ -1,0 +1,100 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: manju-agent
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:your-api-key}
+      base-url: ${OPENAI_API_URL:https://api.openai.com}
+  datasource:
+    url: jdbc:mysql://localhost:3306/manju_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: admin
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.xixi.manjuagent.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+jwt:
+  secret: manju-agent-secret-key-2024-secure-jwt-token
+  expiration: 86400000
+
+agent:
+  max-steps: 20
+  timeout-minutes: 30
+
+tools:
+  text-to-image:
+    api-url: ${TEXT_TO_IMAGE_API_URL:https://api.example.com/text2image}
+    api-key: ${TEXT_TO_IMAGE_API_KEY:your-api-key}
+  image-to-video:
+    ffmpeg-path: /usr/bin/ffmpeg
+
+xixi:
+  auto-execute: true
+  default-style: anime
+
+models:
+  default: deepseek
+  deepseek:
+    api-url: ${DEEPSEEK_API_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_API_KEY:your-api-key}
+    enabled: true
+  qwen:
+    api-url: ${QWEN_API_URL:https://dashscope.aliyuncs.com}
+    api-key: ${QWEN_API_KEY:your-api-key}
+    enabled: true
+  jimeng:
+    api-url: ${JIMENG_API_URL:https://api.jimeng.com}
+    api-key: ${JIMENG_API_KEY:your-api-key}
+    enabled: true
+
+multi-agent:
+  think-agent:
+    system-prompt: "你是一个智能任务规划助手，负责分析用户需求并生成详细的执行计划。"
+
+circuit-breaker:
+  enabled: true
+  failure-threshold: 5
+  success-threshold: 3
+  timeout-seconds: 30
+  reset-timeout-seconds: 60
+
+rate-limiter:
+  requests-per-second: 10
+  burst-capacity: 20
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: manju-agent
+  image-bucket: manju-images
+  video-bucket: manju-videos
+
+logging:
+  level:
+    com.xixi.manjuagent: DEBUG
+    org.springframework.security: INFO
+
+security:
+  ignored-paths:
+    - /api/auth/register
+    - /api/auth/login
+    - /api/agent/models
+    - /api/agent/tools
+    - /api/agent/status
+    - /health
+    - /error

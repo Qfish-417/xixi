@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"AI creative platform manga comic SaaS dark mode futuristic\" --design-system -p \"AI漫剧创作平台\" -f markdown)",
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"vue3 element plus dark theme component best practices\" --domain ux)",
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"animation accessibility layout responsive\" --domain ux)",
+      "Bash(npx vite *)",
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"connection line edge to edge diagram node graph visual\" --domain ux)",
+      "Bash(python .claude/skills/ui-ux-pro-max/scripts/search.py \"video generation image to video AI creative platform\" --design-system -p \"AI漫剧创作平台\")"
+    ]
+  }
+}
