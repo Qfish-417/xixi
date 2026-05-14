@@ -69,7 +69,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-manju-agent-secret-key-2024-secure-jwt-token}
       # DeepSeek API 配置
       MODELS_DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com}
-      MODELS_DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-sk-56f06d13ecf841e3af0a388830b1550e}
+      MODELS_DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:}
       MODELS_DEEPSEEK_ENABLED: ${DEEPSEEK_ENABLED:-true}
     depends_on:
       - mysql
