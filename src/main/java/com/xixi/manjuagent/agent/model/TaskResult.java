@@ -18,6 +18,8 @@ public class TaskResult {
     private Object data;
     private int step;
     private int totalSteps;
+    private List<String> images;
+    private String videoUrl;
     @Builder.Default
     private List<StepResult> stepResults = new ArrayList<>();
 

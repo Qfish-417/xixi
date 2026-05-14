@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:8.3.0
     container_name: manju-mysql
     restart: always
     ports:
-      - "3306:3306"
+      - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-password}
       MYSQL_DATABASE: manju_agent
@@ -39,7 +37,7 @@ services:
     networks:
       - manju-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -51,8 +49,9 @@ services:
     container_name: manju-agent
     restart: always
     ports:
-      - "8080:8080"
+      - "8081:8080"
     environment:
+      SERVER_PORT: 8080
       SPRING_PROFILES_ACTIVE: docker
       MYSQL_URL: jdbc:mysql://mysql:3306/manju_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
       MYSQL_USERNAME: ${MYSQL_USER:-admin}
@@ -62,16 +61,19 @@ services:
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-your-api-key}
       OPENAI_API_URL: ${OPENAI_API_URL:-https://api.openai.com}
-      JIMENG_API_URL: ${JIMENG_API_URL:-https://api.jimeng.com}
+      JIMENG_API_URL: ${JIMENG_API_URL:-https://ark.cn-beijing.volces.com/api/v3}
       JIMENG_API_KEY: ${JIMENG_API_KEY:-your-api-key}
+      JIMENG_MODEL_ID: ${JIMENG_MODEL_ID:-doubao-vision-lite}
       TEXT_TO_IMAGE_API_URL: ${TEXT_TO_IMAGE_API_URL:-https://api.example.com/text2image}
       TEXT_TO_IMAGE_API_KEY: ${TEXT_TO_IMAGE_API_KEY:-your-api-key}
       JWT_SECRET: ${JWT_SECRET:-manju-agent-secret-key-2024-secure-jwt-token}
+      # DeepSeek API 配置
+      MODELS_DEEPSEEK_API_URL: ${DEEPSEEK_API_URL:-https://api.deepseek.com}
+      MODELS_DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-sk-56f06d13ecf841e3af0a388830b1550e}
+      MODELS_DEEPSEEK_ENABLED: ${DEEPSEEK_ENABLED:-true}
     depends_on:
-      mysql:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
+      - mysql
+      - minio
     networks:
       - manju-network
 

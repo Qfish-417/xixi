@@ -105,6 +105,22 @@ public class MaterialService {
      */
     @Transactional
     public Material uploadUserImage(Long userId, MultipartFile file) {
+        return uploadUserMedia(userId, file, "image");
+    }
+
+    /**
+     * 上传用户视频
+     */
+    @Transactional
+    public Material uploadUserVideo(Long userId, MultipartFile file) {
+        return uploadUserMedia(userId, file, "video");
+    }
+
+    /**
+     * 上传用户媒体文件（通用方法）
+     */
+    @Transactional
+    public Material uploadUserMedia(Long userId, MultipartFile file, String type) {
         try {
             // 1. 生成UUID和保留原始文件名
             String uuid = UUID.randomUUID().toString();
@@ -114,17 +130,23 @@ public class MaterialService {
             // 2. 构建存储路径（用户独立文件夹）
             String storagePath = buildStoragePath(userId, uuidFilename);
             
-            // 3. 上传图片到MinIO
-            minioService.uploadFile(file.getInputStream(), storagePath, file.getContentType(), file.getSize());
+            // 3. 上传到MinIO
+            if ("video".equals(type)) {
+                minioService.uploadVideo(file.getInputStream(), storagePath, file.getContentType(), file.getSize());
+            } else {
+                minioService.uploadFile(file.getInputStream(), storagePath, file.getContentType(), file.getSize());
+            }
             
             // 4. 创建缩略图URL
-            String thumbnailUrl = minioService.getImageUrl(storagePath);
+            String thumbnailUrl = "video".equals(type) 
+                    ? minioService.getVideoUrl(storagePath)
+                    : minioService.getImageUrl(storagePath);
             
             // 5. 保存元数据到数据库（包含UUID和原始文件名的映射）
             Material material = Material.builder()
                     .userId(userId)
-                    .name(originalFilename != null ? originalFilename : "上传图片-" + System.currentTimeMillis())
-                    .type("image")
+                    .name(originalFilename != null ? originalFilename : "上传" + type + "-" + System.currentTimeMillis())
+                    .type(type)
                     .uuid(uuid)
                     .originalFilename(originalFilename)
                     .url(storagePath)  // 存储完整路径
@@ -132,17 +154,83 @@ public class MaterialService {
                     .build();
             
             materialMapper.insert(material);
-            log.info("用户图片上传成功: userId={}, materialId={}, uuid={}, originalFilename={}", 
-                    userId, material.getId(), uuid, originalFilename);
+            log.info("用户{}上传成功: userId={}, materialId={}, uuid={}, originalFilename={}", 
+                    type, userId, material.getId(), uuid, originalFilename);
             
             // 6. 更新URL为可访问的URL
-            material.setUrl(minioService.getImageUrl(storagePath));
+            if ("video".equals(type)) {
+                material.setUrl(minioService.getVideoUrl(storagePath));
+            } else {
+                material.setUrl(minioService.getImageUrl(storagePath));
+            }
             return material;
             
         } catch (Exception e) {
-            log.error("上传图片失败: {}", e.getMessage());
-            throw new RuntimeException("上传图片失败", e);
+            log.error("上传{}失败: {}", type, e.getMessage());
+            throw new RuntimeException("上传" + type + "失败", e);
         }
+    }
+
+    /**
+     * 保存已生成的图片/视频URL到用户资产库
+     */
+    @Transactional
+    public Material saveGeneratedImageUrl(Long userId, String mediaUrl, String prompt, 
+                                           String modelName, String style, String type) {
+        try {
+            String uuid = UUID.randomUUID().toString();
+            String extension = "png";
+            String storageUrl = mediaUrl;
+            
+            // 判断类型并下载到MinIO
+            if ("video".equals(type)) {
+                extension = "mp4";
+                // 下载视频并上传到MinIO
+                try {
+                    storageUrl = minioService.uploadFromUrl(mediaUrl, "mp4");
+                } catch (Exception e) {
+                    log.warn("视频上传到MinIO失败，使用原始URL: {}", e.getMessage());
+                }
+            } else {
+                // 下载图片并上传到MinIO
+                try {
+                    storageUrl = minioService.uploadFromUrl(mediaUrl, "png");
+                } catch (Exception e) {
+                    log.warn("图片上传到MinIO失败，使用原始URL: {}", e.getMessage());
+                }
+            }
+            
+            Material material = Material.builder()
+                    .userId(userId)
+                    .name(type + "-" + System.currentTimeMillis())
+                    .type(type != null ? type : "image")
+                    .uuid(uuid)
+                    .originalFilename("generated_" + type + "." + extension)
+                    .url(storageUrl)
+                    .originalPrompt(prompt)
+                    .modelName(modelName)
+                    .style(style)
+                    .build();
+            
+            materialMapper.insert(material);
+            log.info("{}URL保存到资产库: userId={}, materialId={}, uuid={}, url={}", 
+                    type, userId, material.getId(), uuid, storageUrl);
+            
+            return material;
+            
+        } catch (Exception e) {
+            log.error("保存{}URL到资产库失败: {}", type, e.getMessage());
+            throw new RuntimeException("保存" + type + "URL到资产库失败", e);
+        }
+    }
+
+    /**
+     * 保存已生成的视频URL到用户资产库
+     */
+    @Transactional
+    public Material saveGeneratedVideoUrl(Long userId, String videoUrl, String prompt, 
+                                          String modelName, String style) {
+        return saveGeneratedImageUrl(userId, videoUrl, prompt, modelName, style, "video");
     }
 
     /**

@@ -43,6 +43,14 @@
                 <FolderOpen class="icon" />
                 <span>全部素材</span>
               </el-menu-item>
+              <el-menu-item index="image">
+                <ImageIcon class="icon" />
+                <span>图片素材</span>
+              </el-menu-item>
+              <el-menu-item index="video">
+                <VideoIcon class="icon" />
+                <span>视频素材</span>
+              </el-menu-item>
               <el-menu-item index="character">
                 <User class="icon" />
                 <span>角色素材</span>
@@ -96,18 +104,33 @@
             >{{ tag }}</span>
           </div>
 
-          <div :class="['materials-container', viewMode]">
+          <div :class="['materials-container', viewMode]" v-loading="loading">
             <div v-for="material in filteredMaterials" :key="material.id" class="material-card" @click="selectMaterial(material)">
               <div class="material-cover">
-                <img :src="material.imageUrl" />
+                <img v-if="material.type === 'image'" :src="material.imageUrl || material.url" />
+                <video v-else-if="material.type === 'video'" :src="material.url || material.imageUrl" controls preload="metadata" />
+                <div v-if="material.type === 'video'" class="video-overlay">
+                  <VideoIcon class="play-icon" />
+                </div>
                 <div class="material-overlay">
                   <el-button size="small" icon="Download">下载</el-button>
                   <el-button size="small" icon="Star" :class="{ starred: material.starred }">收藏</el-button>
-                  <el-button size="small" icon="Copy">复制</el-button>
+                  <el-button size="small" icon="Delete" @click.stop="handleDeleteMaterial(material.id)">删除</el-button>
                 </div>
               </div>
               <div class="material-info">
-                <h4>{{ material.name }}</h4>
+                <div class="material-name-wrapper">
+                  <input 
+                    v-if="editingId === material.id"
+                    v-model="editName"
+                    class="name-input"
+                    @blur="saveMaterialName(material)"
+                    @keyup.enter="saveMaterialName(material)"
+                    @keyup.esc="cancelEdit(material)"
+                    ref="nameInputRef"
+                  />
+                  <h4 v-else @click="startEdit(material)">{{ material.name }}</h4>
+                </div>
                 <p class="description">{{ material.description }}</p>
                 <div class="material-meta">
                   <span class="category-tag">{{ getCategoryLabel(material.category) }}</span>
@@ -176,12 +199,13 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { 
   PlayCircle, User, Search, FolderOpen, Image as ImageIcon,
-  Package, Sparkles, FileText, LayoutGrid, List, Upload, Star, ArrowLeft
+  Package, Sparkles, FileText, LayoutGrid, List, Upload, Star, ArrowLeft, Image, Video as VideoIcon
 } from 'lucide-vue-next'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { materialAPI } from '../api/material.js'
 
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const searchKeyword = ref('')
@@ -191,98 +215,55 @@ const selectedTags = ref([])
 const viewMode = ref('grid')
 const currentPage = ref(1)
 const pageSize = ref(12)
+const loading = ref(false)
 
 const showDetail = ref(false)
 const selectedMaterial = ref(null)
 
-const groups = ref([
-  { id: 'group1', name: '默认组别' },
-  { id: 'group2', name: '团队共享' },
-  { id: 'group3', name: '个人收藏' }
-])
+const groups = ref([])
 
 const popularTags = ['动漫', '古风', '科幻', '校园', '战斗', '日常']
 
-const materials = ref([
-  { 
-    id: '1', 
-    name: '魔法少女角色', 
-    description: '可爱的魔法少女角色设计，适合动漫风格创作',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=magical%20girl%20anime%20character%20design&image_size=square',
-    category: 'character',
-    type: 'image',
-    groupId: 'group1',
-    tags: ['动漫', '角色', '魔法'],
-    usageCount: 28,
-    starred: true
-  },
-  { 
-    id: '2', 
-    name: '日式校园背景', 
-    description: '精美的日式校园场景，包含樱花树和教学楼',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=japanese%20school%20anime%20background%20cherry%20blossom&image_size=square',
-    category: 'background',
-    type: 'image',
-    groupId: 'group2',
-    tags: ['校园', '日式', '樱花'],
-    usageCount: 45,
-    starred: false
-  },
-  { 
-    id: '3', 
-    name: '魔法道具合集', 
-    description: '各种魔法道具素材，包括魔杖、水晶球等',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=magic%20props%20wand%20crystal%20ball%20fantasy&image_size=square',
-    category: 'prop',
-    type: 'image',
-    groupId: 'group1',
-    tags: ['魔法', '道具', '幻想'],
-    usageCount: 15,
-    starred: true
-  },
-  { 
-    id: '4', 
-    name: '特效素材包', 
-    description: '各种特效素材，包括魔法光效、粒子效果',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=magic%20effects%20particles%20glow%20anime&image_size=square',
-    category: 'effect',
-    type: 'image',
-    groupId: 'group2',
-    tags: ['特效', '光效', '粒子'],
-    usageCount: 32,
-    starred: false
-  },
-  { 
-    id: '5', 
-    name: '古风场景', 
-    description: '中国古风场景，包含亭台楼阁和山水',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=ancient%20chinese%20palace%20garden%20anime&image_size=square',
-    category: 'background',
-    type: 'image',
-    groupId: 'group3',
-    tags: ['古风', '中国风', '场景'],
-    usageCount: 22,
-    starred: true
-  },
-  { 
-    id: '6', 
-    name: '科幻都市', 
-    description: '未来科幻都市场景，充满科技感',
-    imageUrl: 'https://neeko-copilot.bytedance.net/api/text_to_image?prompt=futuristic%20city%20cyberpunk%20anime%20style&image_size=square',
-    category: 'background',
-    type: 'image',
-    groupId: 'group1',
-    tags: ['科幻', '都市', '未来'],
-    usageCount: 18,
-    starred: false
+const materials = ref([])
+
+// 编辑状态
+const editingId = ref(null)
+const editName = ref('')
+const nameInputRef = ref(null)
+
+const loadMaterials = async () => {
+  loading.value = true
+  try {
+    const params = {}
+    if (selectedCategory.value !== 'all') {
+      params.type = selectedCategory.value
+    }
+    if (searchKeyword.value) {
+      params.keyword = searchKeyword.value
+    }
+    
+    const response = await materialAPI.getMaterials(params)
+    materials.value = response.data.materials || []
+    
+    materials.value = materials.value.map(m => ({
+      ...m,
+      imageUrl: m.url,
+      category: m.type,
+      tags: m.tags ? m.tags.split(',').filter(t => t) : []
+    }))
+  } catch (error) {
+    console.error('加载素材失败:', error)
+    ElMessage.error('加载素材库失败')
+  } finally {
+    loading.value = false
   }
-])
+}
 
 const filteredMaterials = computed(() => {
   let result = materials.value
   
   if (selectedCategory.value !== 'all') {
-    result = result.filter(m => m.category === selectedCategory.value)
+    result = result.filter(m => m.type === selectedCategory.value)
   }
   
   if (selectedGroup.value) {
@@ -292,15 +273,16 @@ const filteredMaterials = computed(() => {
   if (searchKeyword.value) {
     const keyword = searchKeyword.value.toLowerCase()
     result = result.filter(m => 
-      m.name.toLowerCase().includes(keyword) ||
-      m.description.toLowerCase().includes(keyword) ||
-      m.tags.some(t => t.toLowerCase().includes(keyword))
+      (m.name && m.name.toLowerCase().includes(keyword)) ||
+      (m.description && m.description.toLowerCase().includes(keyword)) ||
+      (m.originalPrompt && m.originalPrompt.toLowerCase().includes(keyword)) ||
+      (m.tags && m.tags.some(t => t.toLowerCase().includes(keyword)))
     )
   }
   
   if (selectedTags.value.length > 0) {
     result = result.filter(m => 
-      selectedTags.value.some(tag => m.tags.includes(tag))
+      selectedTags.value.some(tag => m.tags && m.tags.includes(tag))
     )
   }
   
@@ -311,6 +293,8 @@ const totalMaterials = computed(() => filteredMaterials.value.length)
 
 const getCategoryLabel = (category) => {
   const labels = {
+    image: '图片素材',
+    video: '视频素材',
     character: '角色素材',
     background: '背景素材',
     prop: '道具素材',
@@ -334,9 +318,12 @@ const handleLogout = () => {
 
 const selectCategory = (category) => {
   selectedCategory.value = category
+  loadMaterials()
 }
 
-const filterByGroup = () => {}
+const filterByGroup = () => {
+  loadMaterials()
+}
 
 const toggleTag = (tag) => {
   const index = selectedTags.value.indexOf(tag)
@@ -347,7 +334,9 @@ const toggleTag = (tag) => {
   }
 }
 
-const searchMaterials = () => {}
+const searchMaterials = () => {
+  loadMaterials()
+}
 
 const selectMaterial = (material) => {
   selectedMaterial.value = material
@@ -355,12 +344,49 @@ const selectMaterial = (material) => {
 }
 
 const uploadMaterial = () => {
-  ElMessage.info('上传素材功能开发中')
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'image/*,video/*'
+  input.multiple = false
+  input.onchange = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    try {
+      const type = file.type.startsWith('image/') ? 'image' : 'video'
+      const response = await materialAPI.uploadMaterial(file, type)
+      ElMessage.success('上传成功')
+      loadMaterials()
+    } catch (error) {
+      console.error('上传失败:', error)
+      ElMessage.error('上传失败，请重试')
+    }
+  }
+  input.click()
 }
 
 const useMaterial = () => {
   ElMessage.success('素材已添加到画布')
   showDetail.value = false
+}
+
+const handleDeleteMaterial = async (id) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这个素材吗？', '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    
+    await materialAPI.deleteMaterial(id)
+    ElMessage.success('删除成功')
+    loadMaterials()
+    showDetail.value = false
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
 }
 
 const handleSizeChange = (size) => {
@@ -370,6 +396,40 @@ const handleSizeChange = (size) => {
 const handleCurrentChange = (page) => {
   currentPage.value = page
 }
+
+// 开始编辑名称
+const startEdit = (material) => {
+  editingId.value = material.id
+  editName.value = material.name
+}
+
+// 保存名称
+const saveMaterialName = async (material) => {
+  if (!editName.value.trim()) {
+    ElMessage.warning('名称不能为空')
+    return
+  }
+  
+  try {
+    await materialAPI.updateMaterialName(material.id, editName.value)
+    material.name = editName.value
+    ElMessage.success('名称修改成功')
+  } catch (error) {
+    console.error('修改名称失败:', error)
+    ElMessage.error('修改名称失败')
+  } finally {
+    editingId.value = null
+  }
+}
+
+// 取消编辑
+const cancelEdit = () => {
+  editingId.value = null
+}
+
+onMounted(() => {
+  loadMaterials()
+})
 </script>
 
 <style scoped>
@@ -515,8 +575,8 @@ const handleCurrentChange = (page) => {
 
 .materials-container {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 24px;
 }
 
 .materials-container.list {
@@ -540,7 +600,7 @@ const handleCurrentChange = (page) => {
 
 .material-cover {
   position: relative;
-  height: 180px;
+  height: 250px;
   overflow: hidden;
 }
 
@@ -548,6 +608,32 @@ const handleCurrentChange = (page) => {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.material-cover video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-overlay {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 50%;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.play-icon {
+  width: 44px;
+  height: 44px;
+  color: white;
 }
 
 .material-overlay {
@@ -575,6 +661,28 @@ const handleCurrentChange = (page) => {
   margin-bottom: 8px;
   font-size: 15px;
   font-family: var(--font-heading);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.material-info h4:hover {
+  color: var(--primary-color);
+}
+
+.material-name-wrapper {
+  position: relative;
+}
+
+.name-input {
+  width: 100%;
+  padding: 4px 8px;
+  font-size: 15px;
+  font-family: var(--font-heading);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  outline: none;
 }
 
 .description {

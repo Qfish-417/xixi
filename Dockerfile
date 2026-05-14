@@ -1,4 +1,5 @@
-FROM openjdk:17-jdk-slim
+# 使用 Amazon Corretto 官方镜像
+FROM amazoncorretto:17
 
 WORKDIR /app
 

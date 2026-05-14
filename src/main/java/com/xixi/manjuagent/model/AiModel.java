@@ -21,6 +21,8 @@ public interface AiModel {
 
     String createVideo(Map<String, Object> params);
 
+    String createVideoFromScript(Map<String, Object> params);
+
     String generateScript(Map<String, Object> params);
 
     String generateText(Map<String, Object> params);

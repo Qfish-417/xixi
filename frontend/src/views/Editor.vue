@@ -52,27 +52,58 @@
           <div v-if="showLibrary" class="library-panel">
             <div class="library-header">
               <h3>我的素材</h3>
-              <span class="library-count">{{ imageElements.length }} 张</span>
+              <div class="library-actions">
+                <span class="library-count">{{ libraryAssets.length + imageElements.length }} 张</span>
+                <el-button size="small" icon="Upload" @click="loadAssetsFromLibrary">加载资产库</el-button>
+              </div>
             </div>
-            <div class="library-grid">
-              <div
-                v-for="img in imageElements"
-                :key="img.id"
-                class="library-item"
-                :class="{ active: selectedElementId === img.id }"
-                @click="selectImageElement(img)"
-              >
-                <img :src="img.src" :alt="img.name" />
-                <div class="library-item-info">
-                  <span class="library-item-name">{{ img.name }}</span>
-                  <span class="library-item-delete" @click.stop="deleteImageElement(img)">×</span>
+            
+            <!-- 资产库素材 -->
+            <div v-if="libraryAssets.length > 0" class="library-section">
+              <h4 class="section-title">资产库</h4>
+              <div class="library-grid">
+                <div
+                  v-for="asset in libraryAssets"
+                  :key="asset.id"
+                  class="library-item external-asset"
+                  draggable="true"
+                  @dragstart="onAssetDragStart($event, asset)"
+                  @click="insertAssetToCanvas(asset)"
+                >
+                  <img v-if="asset.type === 'image'" :src="asset.url" :alt="asset.name" />
+                  <video v-else-if="asset.type === 'video'" :src="asset.url" />
+                  <div class="library-item-info">
+                    <span class="library-item-name">{{ asset.name }}</span>
+                    <span class="asset-type">{{ asset.type === 'image' ? '图片' : '视频' }}</span>
+                  </div>
                 </div>
               </div>
-              <div v-if="imageElements.length === 0" class="library-empty">
-                <Image class="empty-icon" />
-                <span>暂无素材</span>
-                <span class="empty-hint">添加生成框并生成图片后<br />素材将显示在这里</span>
+            </div>
+            
+            <!-- 画布素材 -->
+            <div v-if="imageElements.length > 0" class="library-section">
+              <h4 class="section-title">画布素材</h4>
+              <div class="library-grid">
+                <div
+                  v-for="img in imageElements"
+                  :key="img.id"
+                  class="library-item"
+                  :class="{ active: selectedElementId === img.id }"
+                  @click="selectImageElement(img)"
+                >
+                  <img :src="img.src" :alt="img.name" />
+                  <div class="library-item-info">
+                    <span class="library-item-name">{{ img.name }}</span>
+                    <span class="library-item-delete" @click.stop="deleteImageElement(img)">×</span>
+                  </div>
+                </div>
               </div>
+            </div>
+            
+            <div v-if="libraryAssets.length === 0 && imageElements.length === 0" class="library-empty">
+              <Image class="empty-icon" />
+              <span>暂无素材</span>
+              <span class="empty-hint">点击"加载资产库"按钮<br />或添加生成框生成图片</span>
             </div>
           </div>
 
@@ -96,6 +127,8 @@
               @mouseleave="onCanvasWrapperMouseUp"
               @wheel="onCanvasWheel"
               @contextmenu.prevent
+              @drop="handleCanvasDrop"
+              @dragover="handleCanvasDragOver"
             >
               <svg class="connections-svg">
                 <line
@@ -155,17 +188,26 @@
                     
                     <div class="generate-box-content">
                       <div class="generate-box-image-section">
+                        <!-- 结果展示：视频 -->
                         <template v-if="element.resultType === 'video' && element.images?.length">
                           <div class="video-result-wrapper">
                             <video :src="element.images[0]" controls class="video-result" />
                           </div>
                         </template>
+                        <!-- 结果展示：图片 -->
+                        <template v-else-if="element.resultType === 'image' && element.images?.length">
+                          <div class="image-result-wrapper">
+                            <img :src="element.images[0]" class="image-result" />
+                          </div>
+                        </template>
+                        <!-- 无结果 -->
                         <template v-else-if="!element.images || element.images.length === 0">
                           <div class="image-placeholder" @click.stop="triggerImageInputForElement(element)">
                             <component :is="element.genType === 'video' ? Video : Image" class="placeholder-icon" />
                             <span>{{ element.genType === 'video' ? '上传图片/视频作为生成素材' : '点击添加参考图片' }}</span>
                           </div>
                         </template>
+                        <!-- 输入框：素材缩略图模式 -->
                         <div v-else class="image-gallery">
                           <div
                             v-for="(img, idx) in element.images"
@@ -230,6 +272,35 @@
                   <div v-else-if="element.type === 'image'" class="image-wrapper">
                     <img :src="element.src" :alt="element.name" class="element-image" draggable="false" />
                     <span class="image-delete-btn" @mousedown.stop @click.stop="deleteImageElement(element)">×</span>
+                    <div class="element-name-bar">
+                      <input 
+                        v-if="editingElementId === element.id"
+                        v-model="editingName"
+                        class="element-name-input"
+                        @blur="saveCanvasElementName(element)"
+                        @keyup.enter="saveCanvasElementName(element)"
+                        @keyup.esc="cancelCanvasElementEdit"
+                        ref="canvasNameInputRef"
+                      />
+                      <span v-else @click="startCanvasElementEdit(element)">{{ element.name || '图片' }}</span>
+                    </div>
+                  </div>
+                  
+                  <div v-else-if="element.type === 'video'" class="video-wrapper">
+                    <video :src="element.src" controls class="element-video" draggable="false" />
+                    <span class="image-delete-btn" @mousedown.stop @click.stop="deleteImageElement(element)">×</span>
+                    <div class="element-name-bar">
+                      <input 
+                        v-if="editingElementId === element.id"
+                        v-model="editingName"
+                        class="element-name-input"
+                        @blur="saveCanvasElementName(element)"
+                        @keyup.enter="saveCanvasElementName(element)"
+                        @keyup.esc="cancelCanvasElementEdit"
+                        ref="canvasNameInputRef"
+                      />
+                      <span v-else @click="startCanvasElementEdit(element)">{{ element.name || '视频' }}</span>
+                    </div>
                   </div>
                   
                   <div v-else-if="element.type === 'text'" class="text-element-content">
@@ -368,9 +439,11 @@ import { ref, onMounted, reactive, computed, watch, getCurrentInstance } from 'v
 import { useRoute } from 'vue-router'
 import {
   PlayCircle, User, MousePointer, Pencil, Type, Eraser,
-  Sparkles, Image, Video, FileText, FolderOpen, Plus, Trash, Link, Square, ArrowLeft
+  Sparkles, Image, Video, FileText, FolderOpen, Plus, Trash, Link, Square, ArrowLeft, Upload
 } from 'lucide-vue-next'
-import { ElMessage, ElMessageBox, ElDialog } from 'element-plus'
+import { ElMessage, ElMessageBox, ElDialog, ElLoading } from 'element-plus'
+import { materialAPI } from '../api/material.js'
+import { agentAPI } from '../api/agent.js'
 
 const route = useRoute()
 const { proxy } = getCurrentInstance()
@@ -490,6 +563,11 @@ const textSettings = reactive({
 const selectedElementId = ref(null)
 const selectedConnectionId = ref(null)
 
+// 画布元素名称编辑状态
+const editingElementId = ref(null)
+const editingName = ref('')
+const canvasNameInputRef = ref(null)
+
 const canvas = ref(null)
 let isDrawing = false
 let isDragging = false
@@ -586,10 +664,135 @@ const getConnectedElements = (elementId) => {
 
 // 素材库状态
 const showLibrary = ref(false)
+const libraryAssets = ref([])
 const imageElements = computed(() => canvasElements.value.filter(el => el.type === 'image'))
 
 const toggleLibrary = () => {
   showLibrary.value = !showLibrary.value
+}
+
+// 从资产库加载素材
+const loadAssetsFromLibrary = async () => {
+  const loading = ElLoading.service({
+    lock: true,
+    text: '加载资产库...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+  
+  try {
+    const response = await materialAPI.getMaterials()
+    libraryAssets.value = response.data.materials || []
+    ElMessage.success(`成功加载 ${libraryAssets.value.length} 个素材`)
+  } catch (error) {
+    console.error('加载资产库失败:', error)
+    ElMessage.error('加载资产库失败')
+  } finally {
+    loading.close()
+  }
+}
+
+// 拖拽开始
+const onAssetDragStart = (event, asset) => {
+  event.dataTransfer.setData('asset', JSON.stringify(asset))
+  event.dataTransfer.effectAllowed = 'copy'
+}
+
+// 将资产插入画布
+const insertAssetToCanvas = (asset) => {
+  const elementType = asset.type === 'video' ? 'video' : 'image'
+  
+  const newElement = {
+    id: Date.now(),
+    type: elementType,
+    name: asset.name || '素材',
+    x: canvasOffset.x / zoom.value - 150,
+    y: canvasOffset.y / zoom.value - 100,
+    width: 300,
+    height: 200,
+    rotation: 0,
+    opacity: 100,
+    src: asset.url,
+    materialId: asset.id
+  }
+  
+  canvasElements.value.push(newElement)
+  selectedElementId.value = newElement.id
+  
+  ElMessage.success(`已将${elementType === 'video' ? '视频' : '图片'}插入画布`)
+}
+
+// 处理画布拖放
+const handleCanvasDrop = (event) => {
+  event.preventDefault()
+  
+  const assetData = event.dataTransfer.getData('asset')
+  if (!assetData) return
+  
+  const asset = JSON.parse(assetData)
+  
+  // 计算鼠标在画布上的位置
+  const wrapperRect = getWrapperRect()
+  const worldX = (event.clientX - wrapperRect.left - canvasOffset.x) / zoom.value
+  const worldY = (event.clientY - wrapperRect.top - canvasOffset.y) / zoom.value
+  
+  const elementType = asset.type === 'video' ? 'video' : 'image'
+  
+  const newElement = {
+    id: Date.now(),
+    type: elementType,
+    name: asset.name || '素材',
+    x: worldX - 150,
+    y: worldY - 100,
+    width: 300,
+    height: 200,
+    rotation: 0,
+    opacity: 100,
+    src: asset.url,
+    materialId: asset.id
+  }
+  
+  canvasElements.value.push(newElement)
+  selectedElementId.value = newElement.id
+  
+  ElMessage.success(`已将${elementType === 'video' ? '视频' : '图片'}拖放到画布`)
+}
+
+const handleCanvasDragOver = (event) => {
+  event.preventDefault()
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+// 开始编辑画布元素名称
+const startCanvasElementEdit = (element) => {
+  editingElementId.value = element.id
+  editingName.value = element.name || ''
+}
+
+// 保存画布元素名称
+const saveCanvasElementName = (element) => {
+  if (!editingName.value.trim()) {
+    editingName.value = element.name || (element.type === 'video' ? '视频' : '图片')
+  }
+  element.name = editingName.value.trim()
+  editingElementId.value = null
+  
+  // 如果该元素关联了素材库中的素材，同步更新素材库名称
+  if (element.materialId) {
+    updateMaterialNameInLibrary(element.materialId, element.name)
+  }
+}
+
+// 取消画布元素名称编辑
+const cancelCanvasElementEdit = () => {
+  editingElementId.value = null
+}
+
+// 更新素材库中的素材名称（本地缓存）
+const updateMaterialNameInLibrary = (materialId, newName) => {
+  const asset = libraryAssets.value.find(a => a.id === materialId)
+  if (asset) {
+    asset.name = newName
+  }
 }
 
 const selectImageElement = (img) => {
@@ -852,54 +1055,74 @@ const generateFromBox = async (element) => {
     const hasImages = element.images && element.images.length > 0
     const isVideo = element.genType === 'video'
 
-    let resultUrl
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 构建参考图片列表（如果有）
+    const referenceImages = hasImages ? element.images.filter(img => img && img.startsWith('data:image')) : []
 
-    if (isVideo) {
-      // 图生视频：传入参考图片和提示词
-      const params = new URLSearchParams()
-      params.set('prompt', fullPrompt)
-      params.set('resolution', element.resolution)
-      params.set('duration', '10')
-      params.set('fps', '24')
-      if (hasImages) {
-        params.set('imageUrls', element.images.join(','))
-      }
-      resultUrl = `/api/tools/image-to-video?${params.toString()}`
-    } else {
-      // 文生图
-      if (hasImages) {
-        fullPrompt = `参考图片风格: ${fullPrompt || '保持图片风格'}`
-      }
-      resultUrl = `/api/tools/text-to-image?prompt=${encodeURIComponent(fullPrompt)}&resolution=${element.resolution}`
+    const requestBody = {
+      input: isVideo
+        ? `生成视频: ${fullPrompt}，分辨率: ${element.resolution}，时长: 10秒`
+        : (hasImages
+          ? `基于参考图片进行风格转换: ${fullPrompt || '保持图片风格'}`
+          : `生成图片: ${fullPrompt}`),
+      modelName: 'jimeng',
+      referenceImages: referenceImages
     }
 
-    // 在原框下方新建一个生成框，存放生成结果
-    const resultBox = {
+    const response = await agentAPI.master(requestBody)
+    const data = response.data
+    console.log('[Editor] 生成响应:', JSON.stringify(data))
+
+    if (!data.success) {
+      ElMessage.error('生成失败：' + (data.message || '未知错误'))
+      return
+    }
+
+    // 收集生成结果
+    let resultType = 'image'
+    let resultSrc = null
+
+    if (data.images && data.images.length > 0) {
+      resultType = 'image'
+      resultSrc = data.images[0]
+    } else if (data.videoUrl) {
+      resultType = 'video'
+      resultSrc = data.videoUrl
+    } else if (data.message) {
+      // 可能message中包含URL（回退方案）
+      const urlMatch = data.message.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|mov|webm)/i)
+      if (urlMatch) {
+        resultSrc = urlMatch[0]
+        resultType = urlMatch[0].match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image'
+      }
+    }
+
+    if (!resultSrc) {
+      ElMessage.warning('生成完成但未获取到结果：' + (data.message || '').substring(0, 100))
+      return
+    }
+
+    // 直接在画布上添加图片/视频元素
+    const resultElement = {
       id: Date.now(),
-      type: 'generate',
-      name: `${element.name} 的结果`,
-      x: element.x,
-      y: element.y + element.height + 30,
+      type: resultType,  // 'image' 或 'video'
+      name: `${element.name} 结果`,
+      x: element.x + element.width + 30,
+      y: element.y,
       width: isVideo ? 400 : 350,
       height: isVideo ? 300 : 280,
       rotation: 0,
       opacity: 100,
-      prompt: fullPrompt,
-      images: [resultUrl],
-      resolution: element.resolution,
-      isGenerating: false,
-      genType: isVideo ? 'video' : 'image',
-      resultType: isVideo ? 'video' : 'image'
+      src: resultSrc
     }
-    canvasElements.value.push(resultBox)
+    canvasElements.value.push(resultElement)
 
-    // 原框 ↔ 结果框 连线
-    createConnection(element.id, resultBox.id, 'bottom', 'top')
+    // 原框 → 结果元素 连线
+    createConnection(element.id, resultElement.id, 'right', 'left')
 
     ElMessage.success(isVideo ? '视频生成成功！' : '图片生成成功！')
   } catch (error) {
-    ElMessage.error('生成失败，请重试')
+    console.error('生成失败:', error)
+    ElMessage.error('生成失败：' + (error.response?.data?.message || error.message))
   } finally {
     element.isGenerating = false
   }
@@ -1570,12 +1793,31 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.library-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .library-count {
   font-size: 11px;
   color: var(--text-muted);
   background: var(--bg-card-hover);
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+.library-section {
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-left: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .library-grid {
@@ -1645,6 +1887,32 @@ onMounted(() => {
   cursor: pointer;
   flex-shrink: 0;
   transition: all var(--transition-fast);
+}
+
+.library-item.external-asset {
+  border-color: rgba(99, 102, 241, 0.2);
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.library-item.external-asset:hover {
+  border-color: var(--primary-color);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.library-item video {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.asset-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-card-hover);
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .library-item-delete:hover {
@@ -2080,7 +2348,26 @@ onMounted(() => {
   height: 14px;
 }
 
-/* ===== Video Result ===== */
+/* ===== Result Display ===== */
+.image-result-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.image-result {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
 .video-result-wrapper {
   width: 100%;
   height: 100%;
@@ -2128,6 +2415,23 @@ onMounted(() => {
   border-radius: 4px;
 }
 
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.video-wrapper:hover .image-delete-btn {
+  opacity: 1;
+}
+
+.element-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
 .image-delete-btn {
   position: absolute;
   top: 4px;
@@ -2151,6 +2455,45 @@ onMounted(() => {
 .image-delete-btn:hover {
   background: #ef4444;
   transform: scale(1.15);
+}
+
+.element-name-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.element-name-bar span {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.element-name-bar:hover span {
+  color: var(--primary-light);
+}
+
+.element-name-input {
+  width: 100%;
+  padding: 2px 6px;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  color: #fff;
+  outline: none;
+  text-align: center;
 }
 
 .text-element-content {

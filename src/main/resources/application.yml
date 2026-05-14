@@ -1,17 +1,19 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
 
 spring:
   application:
     name: manju-agent
+  config:
+    import: classpath:api-keys.yml
   ai:
     openai:
       api-key: ${OPENAI_API_KEY:your-api-key}
       base-url: ${OPENAI_API_URL:https://api.openai.com}
   datasource:
-    url: jdbc:mysql://localhost:3306/manju_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
-    username: admin
-    password: password
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/manju_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${MYSQL_USERNAME:admin}
+    password: ${MYSQL_PASSWORD:password}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       minimum-idle: 5

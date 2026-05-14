@@ -28,6 +28,11 @@ gradle-app.setting
 
 # Spring Boot 脂肪包（通常不提交）
 *.jar
+
+# 敏感配置文件
+api-keys.yml
+.env
+*.key
 *.war
 *.ear
 

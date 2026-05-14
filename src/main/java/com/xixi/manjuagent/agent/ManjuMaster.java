@@ -41,13 +41,19 @@ public class ManjuMaster {
         this.modelFactory = modelFactory;
         this.circuitBreaker = circuitBreaker;
         this.rateLimiter = rateLimiter;
-        log.info("ManjuMaster 主智能体初始化完成");
+        System.out.println("[TRACE] ManjuMaster 初始化完成");
     }
 
     public TaskResult process(String userInput) {
-        log.info("主智能体处理输入: {}", userInput);
+        return process(userInput, null);
+    }
+
+    public TaskResult process(String userInput, String modelName) {
+        System.out.println("[TRACE-1] ===== 主智能体入口 =====");
+        System.out.println("[TRACE-1] input=" + userInput + ", modelName=" + modelName);
 
         if (!rateLimiter.tryAcquire("manju-master")) {
+            System.out.println("[TRACE-1] !!! 限流拦截 !!!");
             return TaskResult.builder()
                     .success(false)
                     .message("请求过于频繁，请稍后重试")
@@ -56,16 +62,33 @@ public class ManjuMaster {
 
         try {
             IntentAnalysis analysis = analyzeInput(userInput);
-            log.info("意图分析结果: {}", analysis.getIntentType());
+            System.out.println("[TRACE-2] 意图分析: type=" + analysis.getIntentType()
+                    + ", theme=" + analysis.getTheme()
+                    + ", style=" + analysis.getStyle());
 
-            TaskPlan plan = planTask(analysis);
-            log.info("生成任务计划，共 {} 个步骤", plan.getSteps().size());
+            TaskPlan plan = planTask(analysis, modelName);
+            System.out.println("[TRACE-3] 任务计划: taskId=" + plan.getTaskId()
+                    + ", 步骤数=" + plan.getSteps().size());
+            for (TaskPlan.TaskStep s : plan.getSteps()) {
+                System.out.println("[TRACE-3]   步骤" + s.getStepNumber()
+                        + ": tool=" + s.getToolName()
+                        + ", model=" + s.getModelName()
+                        + ", params=" + s.getParameters());
+            }
 
             TaskResult result = executePlan(plan);
+            String msgPreview = result.getMessage() != null
+                    ? result.getMessage().substring(0, Math.min(150, result.getMessage().length()))
+                    : "null";
+            System.out.println("[TRACE-6] 最终返回: success=" + result.isSuccess()
+                    + ", message=" + msgPreview
+                    + ", images=" + (result.getImages() != null ? result.getImages().size() + "张" : "无")
+                    + ", videoUrl=" + (result.getVideoUrl() != null ? "有" : "无"));
             return result;
 
         } catch (Exception e) {
-            log.error("主智能体执行失败", e);
+            System.out.println("[TRACE-ERR] 主智能体执行失败: " + e.getMessage());
+            e.printStackTrace();
             return TaskResult.builder()
                     .success(false)
                     .message("执行失败: " + e.getMessage())
@@ -75,7 +98,7 @@ public class ManjuMaster {
 
     public IntentAnalysis analyzeInput(String input) {
         IntentAnalysis.IntentType intentType = detectIntent(input);
-        
+
         Map<String, Object> params = extractParameters(input);
         String theme = (String) params.getOrDefault("theme", input);
         String style = (String) params.getOrDefault("style", "日系动漫");
@@ -93,32 +116,32 @@ public class ManjuMaster {
     private IntentAnalysis.IntentType detectIntent(String input) {
         input = input.toLowerCase();
 
-        if ((input.contains("生成") && input.contains("图片")) || 
+        if ((input.contains("生成") && input.contains("图片")) ||
             (input.contains("画") && input.contains("图"))) {
             return IntentAnalysis.IntentType.TEXT_TO_IMAGE;
         }
-        
-        if ((input.contains("修改") && input.contains("图")) || 
+
+        if ((input.contains("修改") && input.contains("图")) ||
             (input.contains("转换") && input.contains("风格"))) {
             return IntentAnalysis.IntentType.IMAGE_TO_IMAGE;
         }
-        
+
         if (input.contains("视频") || input.contains("动画")) {
             if (input.contains("图片") || input.contains("图")) {
                 return IntentAnalysis.IntentType.IMAGE_TO_VIDEO;
             }
         }
-        
+
         if (input.contains("脚本") || input.contains("故事")) {
             return IntentAnalysis.IntentType.SCRIPT_GENERATION;
         }
-        
-        if (input.contains("漫剧") || input.contains("创作") || 
+
+        if (input.contains("漫剧") || input.contains("创作") ||
             input.contains("完整") || input.contains("一集")) {
             return IntentAnalysis.IntentType.FULL_PRODUCTION;
         }
-        
-        if (input.contains("?") || input.contains("？") || 
+
+        if (input.contains("?") || input.contains("？") ||
             input.contains("怎么") || input.contains("如何")) {
             return IntentAnalysis.IntentType.QUESTION;
         }
@@ -145,38 +168,42 @@ public class ManjuMaster {
     }
 
     public TaskPlan planTask(IntentAnalysis analysis) {
+        return planTask(analysis, null);
+    }
+
+    public TaskPlan planTask(IntentAnalysis analysis, String modelName) {
         String taskId = "task-" + System.currentTimeMillis();
         List<TaskPlan.TaskStep> steps = new ArrayList<>();
 
         switch (analysis.getIntentType()) {
             case TEXT_TO_IMAGE:
-                steps.add(createTextToImageStep(1, analysis));
+                steps.add(createTextToImageStep(1, analysis, modelName));
                 break;
-                
+
             case IMAGE_TO_IMAGE:
-                steps.add(createImageToImageStep(1, analysis));
+                steps.add(createImageToImageStep(1, analysis, modelName));
                 break;
-                
+
             case IMAGE_TO_VIDEO:
-                steps.add(createImageToVideoStep(1, analysis));
+                steps.add(createImageToVideoStep(1, analysis, modelName));
                 break;
-                
+
             case SCRIPT_GENERATION:
-                steps.add(createScriptStep(1, analysis));
+                steps.add(createScriptStep(1, analysis, modelName));
                 break;
-                
+
             case FULL_PRODUCTION:
-                steps.add(createScriptStep(1, analysis));
-                steps.add(createTextToImageStep(2, analysis));
-                steps.add(createImageToVideoStep(3, analysis));
+                steps.add(createScriptStep(1, analysis, modelName));
+                steps.add(createTextToImageStep(2, analysis, modelName));
+                steps.add(createImageToVideoStep(3, analysis, modelName));
                 break;
-                
+
             case QUESTION:
-                steps.add(createAnswerStep(1, analysis));
+                steps.add(createAnswerStep(1, analysis, modelName));
                 break;
-                
+
             default:
-                steps.add(createUnknownStep(1, analysis));
+                steps.add(createUnknownStep(1, analysis, modelName));
         }
 
         return TaskPlan.builder()
@@ -187,10 +214,15 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createScriptStep(int stepNum, IntentAnalysis analysis) {
+        return createScriptStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createScriptStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "jimeng";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("scriptGenerator")
-                .modelName("jimeng")
+                .modelName(effectiveModel)
                 .parameters(Map.of(
                         "theme", analysis.getTheme(),
                         "style", analysis.getStyle(),
@@ -202,14 +234,19 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createTextToImageStep(int stepNum, IntentAnalysis analysis) {
+        return createTextToImageStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createTextToImageStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "jimeng";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("textToImage")
-                .modelName("jimeng")
+                .modelName(effectiveModel)
                 .parameters(Map.of(
                         "prompt", analysis.getTheme(),
                         "style", analysis.getStyle(),
-                        "resolution", "1024x1024"
+                        "resolution", "1920x1920"
                 ))
                 .dependencies(stepNum > 1 ? List.of(stepNum - 1) : List.of())
                 .status("pending")
@@ -217,10 +254,15 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createImageToImageStep(int stepNum, IntentAnalysis analysis) {
+        return createImageToImageStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createImageToImageStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "jimeng";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("imageToImage")
-                .modelName("jimeng")
+                .modelName(effectiveModel)
                 .parameters(Map.of(
                         "imageUrl", analysis.getParameters().getOrDefault("imageUrl", ""),
                         "prompt", analysis.getTheme(),
@@ -232,10 +274,15 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createImageToVideoStep(int stepNum, IntentAnalysis analysis) {
+        return createImageToVideoStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createImageToVideoStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "jimeng";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("imageToVideo")
-                .modelName("jimeng")
+                .modelName(effectiveModel)
                 .parameters(Map.of(
                         "duration", 10,
                         "fps", 24
@@ -246,10 +293,15 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createAnswerStep(int stepNum, IntentAnalysis analysis) {
+        return createAnswerStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createAnswerStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "deepseek";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("question")
-                .modelName("qianwen")
+                .modelName(effectiveModel)
                 .parameters(Map.of("question", analysis.getOriginalInput()))
                 .dependencies(List.of())
                 .status("pending")
@@ -257,10 +309,15 @@ public class ManjuMaster {
     }
 
     private TaskPlan.TaskStep createUnknownStep(int stepNum, IntentAnalysis analysis) {
+        return createUnknownStep(stepNum, analysis, null);
+    }
+
+    private TaskPlan.TaskStep createUnknownStep(int stepNum, IntentAnalysis analysis, String modelName) {
+        String effectiveModel = (modelName != null && !modelName.isEmpty()) ? modelName : "deepseek";
         return TaskPlan.TaskStep.builder()
                 .stepNumber(stepNum)
                 .toolName("unknown")
-                .modelName("qianwen")
+                .modelName(effectiveModel)
                 .parameters(Map.of("input", analysis.getOriginalInput()))
                 .dependencies(List.of())
                 .status("pending")
@@ -269,9 +326,13 @@ public class ManjuMaster {
 
     public TaskResult executePlan(TaskPlan plan) {
         List<TaskResult.StepResult> stepResults = new ArrayList<>();
+        String mainMessage = null;
+        List<String> imageUrls = new ArrayList<>();
+        String videoUrl = null;
 
         for (TaskPlan.TaskStep step : plan.getSteps()) {
-            log.info("执行步骤 {}/{}: {}", step.getStepNumber(), plan.getSteps().size(), step.getToolName());
+            System.out.println("[TRACE-4] 执行步骤" + step.getStepNumber() + "/" + plan.getSteps().size()
+                    + ": tool=" + step.getToolName() + ", model=" + step.getModelName());
 
             Object resultData = executeStep(step);
             String resultMsg = "";
@@ -280,8 +341,29 @@ public class ManjuMaster {
                 resultMsg = "成功";
                 step.setResult(resultData);
                 updateStepDependencies(plan, step, resultData);
+
+                String preview = resultData.toString().length() > 200
+                        ? resultData.toString().substring(0, 200) + "..."
+                        : resultData.toString();
+                boolean isTemplate = resultData.toString().contains("这是一段由")
+                        || resultData.toString().contains("Deepseek生成的详细文本内容")
+                        || resultData.toString().contains("基于提示词");
+                System.out.println("[TRACE-4] 步骤" + step.getStepNumber() + "返回: 成功"
+                        + ", 类型=" + resultData.getClass().getSimpleName()
+                        + ", 是否模板=" + isTemplate
+                        + ", 内容=" + preview);
+
+                String toolName = step.getToolName();
+                if ("textToImage".equals(toolName) || "imageToImage".equals(toolName)) {
+                    imageUrls.add(resultData.toString());
+                } else if ("imageToVideo".equals(toolName)) {
+                    videoUrl = resultData.toString();
+                } else {
+                    mainMessage = resultData.toString();
+                }
             } else {
                 resultMsg = "失败";
+                System.out.println("[TRACE-4] !!! 步骤" + step.getStepNumber() + "返回: 失败(null) !!!");
             }
 
             TaskResult.StepResult stepResult = TaskResult.StepResult.builder()
@@ -303,9 +385,13 @@ public class ManjuMaster {
             }
         }
 
+        String message = mainMessage != null ? mainMessage : summarizeResult(stepResults);
+
         return TaskResult.builder()
                 .success(true)
-                .message(summarizeResult(stepResults))
+                .message(message)
+                .images(imageUrls.isEmpty() ? null : imageUrls)
+                .videoUrl(videoUrl)
                 .step(plan.getSteps().size())
                 .totalSteps(plan.getSteps().size())
                 .stepResults(stepResults)
@@ -320,28 +406,24 @@ public class ManjuMaster {
         try {
             return circuitBreaker.execute(modelName, () -> {
                 AiModel model = modelFactory.getModel(modelName);
+                System.out.println("[TRACE-5] 调用模型: model=" + (model != null ? model.getName() : "null")
+                        + ", tool=" + toolName + ", params=" + parameters);
 
                 return switch (toolName) {
                     case "textToImage" -> model.generateImage(parameters);
                     case "imageToImage" -> model.transformImage(parameters);
                     case "imageToVideo" -> model.createVideo(parameters);
                     case "scriptGenerator" -> model.generateScript(parameters);
-                    case "question", "unknown" -> answerQuestion(parameters);
+                    case "question", "unknown" -> model.generateText(parameters);
                     default -> throw new IllegalArgumentException("未知工具: " + toolName);
                 };
             });
         } catch (Exception e) {
-            log.error("执行步骤失败", e);
+            System.out.println("[TRACE-5] !!! 执行步骤失败: tool=" + toolName + ", model=" + modelName
+                    + ", 异常=" + e.getClass().getSimpleName() + ": " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
-    }
-
-    private Object answerQuestion(Map<String, Object> parameters) {
-        String question = parameters.get("question") != null ? 
-                         parameters.get("question").toString() : 
-                         parameters.get("input").toString();
-        
-        return "我来回答您的问题：" + question + "\n\n这是一个模拟的AI回答。在实际应用中，这里会调用Qwen或DeepSeek模型来生成真实的回答。";
     }
 
     private void updateStepDependencies(TaskPlan plan, TaskPlan.TaskStep completedStep, Object result) {
@@ -350,7 +432,7 @@ public class ManjuMaster {
                 if (step.getParameters() == null) {
                     step.setParameters(new HashMap<>());
                 }
-                
+
                 if (completedStep.getToolName().equals("scriptGenerator") && step.getToolName().equals("textToImage")) {
                     step.getParameters().put("prompt", result.toString());
                 } else if (completedStep.getToolName().equals("textToImage") && step.getToolName().equals("imageToVideo")) {

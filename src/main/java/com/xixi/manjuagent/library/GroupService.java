@@ -103,4 +103,8 @@ public class GroupService {
                 .map(group -> group.hasMember(userId) || group.isOwner(userId))
                 .orElse(false);
     }
+
+    public long count() {
+        return groupRepository.count();
+    }
 }

@@ -20,6 +20,7 @@ public class ExecuteAgent {
         this.modelFactory = modelFactory;
         this.circuitBreaker = circuitBreaker;
         this.rateLimiter = rateLimiter;
+        System.out.println("[TRACE] ExecuteAgent 初始化完成");
     }
 
     public TaskResult executeStep(TaskPlan.TaskStep step) {
@@ -27,9 +28,11 @@ public class ExecuteAgent {
         String modelName = step.getModelName();
         java.util.Map<String, Object> parameters = step.getParameters();
 
-        log.info("执行智能体执行步骤: {}, 模型: {}", toolName, modelName);
+        System.out.println("[TRACE-EXEC] 执行步骤: tool=" + toolName + ", model=" + modelName
+                + ", params=" + parameters);
 
         if (!rateLimiter.tryAcquire("execute-agent")) {
+            System.out.println("[TRACE-EXEC] !!! 限流拦截 !!!");
             return TaskResult.builder()
                     .success(false)
                     .message("请求过于频繁，请稍后重试")
@@ -39,14 +42,22 @@ public class ExecuteAgent {
         try {
             return circuitBreaker.execute(modelName, () -> {
                 AiModel model = modelFactory.getModel(modelName);
-                
+                System.out.println("[TRACE-EXEC] 调用模型: " + (model != null ? model.getName() : "null")
+                        + ", tool=" + toolName);
+
                 String result = switch (toolName) {
                     case "textToImage" -> model.generateImage(parameters);
                     case "imageToImage" -> model.transformImage(parameters);
                     case "imageToVideo" -> model.createVideo(parameters);
                     case "scriptGenerator" -> model.generateScript(parameters);
+                    case "question", "unknown" -> model.generateText(parameters);
                     default -> throw new IllegalArgumentException("未知工具: " + toolName);
                 };
+
+                String preview = result != null
+                        ? result.substring(0, Math.min(100, result.length()))
+                        : "null";
+                System.out.println("[TRACE-EXEC] 模型返回(前100字): " + preview);
 
                 return TaskResult.builder()
                         .success(true)
@@ -57,9 +68,19 @@ public class ExecuteAgent {
                         .build();
             });
         } catch (CircuitBreaker.CircuitBreakerException e) {
+            System.out.println("[TRACE-EXEC] !!! 熔断器拦截: " + e.getMessage());
             return TaskResult.builder()
                     .success(false)
                     .message(e.getMessage())
+                    .step(step.getStepNumber())
+                    .totalSteps(step.getStepNumber())
+                    .build();
+        } catch (Exception e) {
+            System.out.println("[TRACE-EXEC] !!! 执行异常: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            e.printStackTrace();
+            return TaskResult.builder()
+                    .success(false)
+                    .message("执行失败: " + e.getMessage())
                     .step(step.getStepNumber())
                     .totalSteps(step.getStepNumber())
                     .build();

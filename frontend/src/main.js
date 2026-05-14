@@ -4,6 +4,7 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import './style.css'
 import router from './router'
+import './api/auth.js' // 确保Token拦截器生效
 
 const app = createApp(App)
 app.use(ElementPlus)

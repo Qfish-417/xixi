@@ -14,7 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.net.URL;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -78,8 +80,15 @@ public class MinioService {
     }
 
     public String uploadFile(InputStream inputStream, String filename, String contentType, long size) {
+        return uploadFile(inputStream, filename, contentType, size, minioConfig.getImageBucket());
+    }
+
+    public String uploadVideo(InputStream inputStream, String filename, String contentType, long size) {
+        return uploadFile(inputStream, filename, contentType, size, minioConfig.getVideoBucket());
+    }
+
+    private String uploadFile(InputStream inputStream, String filename, String contentType, long size, String bucketName) {
         try {
-            String bucketName = minioConfig.getImageBucket();
             initBucket(bucketName);
 
             String extension = "";
@@ -165,5 +174,80 @@ public class MinioService {
 
     public String getPublicUrl(String objectName) {
         return String.format("%s/%s/%s", minioConfig.getEndpoint(), minioConfig.getImageBucket(), objectName);
+    }
+
+    /**
+     * 直接上传字节数组到MinIO，返回预签名URL
+     */
+    public String uploadBytes(byte[] data, String fileExtension) {
+        try {
+            String bucketName = minioConfig.getImageBucket();
+            initBucket(bucketName);
+
+            String ext = (fileExtension != null && !fileExtension.isEmpty()) ? fileExtension : "png";
+            String objectName = UUID.randomUUID().toString() + "." + ext;
+
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType("image/" + ext)
+                    .build());
+
+            log.info("字节上传成功: object={}, size={}bytes", objectName, data.length);
+            return getImageUrl(objectName);
+        } catch (Exception e) {
+            log.error("字节上传失败: {}", e.getMessage());
+            throw new RuntimeException("图片存储失败", e);
+        }
+    }
+
+    /**
+     * 从URL下载文件并上传到MinIO，返回预签名URL
+     */
+    public String uploadFromUrl(String fileUrl, String fileExtension) {
+        try {
+            URL url = new URL(fileUrl);
+            byte[] data;
+            try (InputStream in = url.openStream()) {
+                data = in.readAllBytes();
+            }
+
+            // 根据扩展名判断是图片还是视频
+            String bucketName;
+            String contentType;
+            String objectName;
+            
+            if ("mp4".equalsIgnoreCase(fileExtension)) {
+                bucketName = minioConfig.getVideoBucket();
+                contentType = "video/mp4";
+                objectName = UUID.randomUUID().toString() + ".mp4";
+            } else {
+                bucketName = minioConfig.getImageBucket();
+                contentType = "image/" + (fileExtension != null ? fileExtension : "png");
+                objectName = UUID.randomUUID().toString()
+                        + (fileExtension != null && !fileExtension.isEmpty() ? "." + fileExtension : ".png");
+            }
+            
+            initBucket(bucketName);
+
+            minioClient.putObject(PutObjectArgs.builder()
+                    .bucket(bucketName)
+                    .object(objectName)
+                    .stream(new ByteArrayInputStream(data), data.length, -1)
+                    .contentType(contentType)
+                    .build());
+
+            log.info("从URL下载并上传成功: url={}, object={}", fileUrl, objectName);
+
+            // 返回对应的URL
+            if ("mp4".equalsIgnoreCase(fileExtension)) {
+                return getVideoUrl(objectName);
+            }
+            return getImageUrl(objectName);
+        } catch (Exception e) {
+            log.error("从URL下载并上传失败: url={}, error={}", fileUrl, e.getMessage());
+            throw new RuntimeException("文件存储失败", e);
+        }
     }
 }

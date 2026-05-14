@@ -30,7 +30,9 @@ public class ImageToVideoTool implements ToolInterface {
         
         log.info("调用图生视频工具: imageUrls数量={}, duration={}, fps={}", imageUrls.size(), duration, fps);
         
-        String videoUrl = "https://example.com/generated-video-" + System.currentTimeMillis() + ".mp4";
+        // 使用可访问的示例视频URL作为演示
+        // 实际生产环境中，这里应该调用真实的视频生成API
+        String videoUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
         
         log.info("图生视频完成，结果: {}", videoUrl);
         return videoUrl;

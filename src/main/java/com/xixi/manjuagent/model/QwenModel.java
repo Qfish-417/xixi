@@ -77,6 +77,12 @@ public class QwenModel implements AiModel {
     }
 
     @Override
+    public String createVideoFromScript(Map<String, Object> params) {
+        log.warn("Qwen不支持文生视频，建议使用即梦模型");
+        return null;
+    }
+
+    @Override
     public String generateScript(Map<String, Object> params) {
         log.info("Qwen - 脚本生成: {}", params);
         String theme = (String) params.get("theme");

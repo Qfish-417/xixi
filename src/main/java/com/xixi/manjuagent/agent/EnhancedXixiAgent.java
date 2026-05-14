@@ -239,7 +239,11 @@ public class EnhancedXixiAgent {
                 videoPlan, true);
             
             addLog(session, "用户确认", 
-                "请查看以上视频流程，如果需要调整时长、转场效果或添加特效，请告诉我。如果满意，请回复'确认'开始生成视频。",
+                "请查看以上视频流程。接下来需要选择视频生成方式：\n" +
+                "1. 【图生视频】- 使用刚才生成的图片序列生成视频（推荐）\n" +
+                "2. 【直接生成】- 根据剧本描述直接生成视频\n" +
+                "如果需要调整时长、转场效果或添加特效，也可以告诉我。\n" +
+                "请回复'图生视频'或'直接生成'开始生成。",
                 null, false);
         } else {
             addLog(session, "错误", "视频流程规划失败: " + videoPlan.getMessage(), null, false);
@@ -254,11 +258,29 @@ public class EnhancedXixiAgent {
             throw new IllegalArgumentException("会话不存在: " + sessionId);
         }
 
-        if ("确认".equals(userResponse) || "开始".equals(userResponse)) {
+        // 用户选择图生视频方式
+        if ("图生视频".equals(userResponse)) {
             session.setWaitingForUserInput(false);
             session.setWaitingFor(null);
+            addLog(session, "用户选择", "您选择了【图生视频】方式", null, false);
             return generateVideo(sessionId, modelName);
-        } else {
+        } 
+        // 用户选择直接生成方式
+        else if ("直接生成".equals(userResponse)) {
+            session.setWaitingForUserInput(false);
+            session.setWaitingFor(null);
+            addLog(session, "用户选择", "您选择了【直接生成】方式", null, false);
+            return generateVideoDirectly(sessionId, modelName);
+        }
+        // 传统确认方式，默认使用图生视频
+        else if ("确认".equals(userResponse) || "开始".equals(userResponse)) {
+            session.setWaitingForUserInput(false);
+            session.setWaitingFor(null);
+            addLog(session, "用户选择", "默认使用【图生视频】方式", null, false);
+            return generateVideo(sessionId, modelName);
+        }
+        // 其他输入视为修改请求
+        else {
             addLog(session, "用户输入", "收到您的修改: " + userResponse, null, false);
             // TODO: 使用AI理解用户修改意图并更新视频流程
             addLog(session, "视频规划", "视频流程已根据您的要求更新，请再次确认。", 
@@ -267,6 +289,48 @@ public class EnhancedXixiAgent {
             session.setWaitingFor("video_flow_confirmation");
             return session;
         }
+    }
+
+    /**
+     * 根据剧本描述直接生成视频（不使用图片）
+     */
+    public XixiSession generateVideoDirectly(String sessionId, String modelName) {
+        XixiSession session = sessions.get(sessionId);
+        if (session == null) {
+            throw new IllegalArgumentException("会话不存在: " + sessionId);
+        }
+
+        addLog(session, "视频生成", "根据剧本描述直接生成视频...", null, false);
+        
+        AiModel model = modelFactory.getModel(modelName);
+        
+        try {
+            // 构建剧本描述
+            StringBuilder scriptDesc = new StringBuilder();
+            for (Scene scene : session.getScriptPlan().getScenes()) {
+                scriptDesc.append(scene.getDescription()).append("\n");
+            }
+            
+            Map<String, Object> params = Map.of(
+                    "prompt", scriptDesc.toString(),
+                    "style", session.getStyle(),
+                    "duration", session.getVideoFlowPlan().getDuration()
+            );
+            
+            String videoUrl = model.createVideoFromScript(params);
+            session.setFinalVideoUrl(videoUrl);
+            session.setState(AgentState.FINISHED);
+            
+            addLog(session, "视频生成", "视频生成完成！", videoUrl, false);
+            addLog(session, "完成", "嘻嘻模式执行完成！您的视频已生成。", null, false);
+            
+        } catch (Exception e) {
+            log.error("直接视频生成失败", e);
+            session.setState(AgentState.ERROR);
+            addLog(session, "错误", "视频生成失败: " + e.getMessage(), null, false);
+        }
+        
+        return session;
     }
 
     public XixiSession generateVideo(String sessionId, String modelName) {

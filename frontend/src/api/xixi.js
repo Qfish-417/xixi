@@ -1,6 +1,7 @@
 import axios from 'axios'
+import '../api/auth.js' // 确保Token拦截器生效
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api'
+const API_BASE_URL = '/api'
 
 const xixiAPI = {
   // 启动嘻嘻模式

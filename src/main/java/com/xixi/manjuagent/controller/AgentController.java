@@ -6,9 +6,12 @@ import com.xixi.manjuagent.agent.XixiAgent;
 import com.xixi.manjuagent.agent.model.TaskResult;
 import com.xixi.manjuagent.model.AiModel;
 import com.xixi.manjuagent.model.ModelFactory;
+import com.xixi.manjuagent.multiagent.AgentCoordinator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -24,29 +27,52 @@ public class AgentController {
     private final ManjuAgent manjuAgent;
     private final XixiAgent xixiAgent;
     private final ManjuMaster manjuMaster;
+    private final AgentCoordinator agentCoordinator;
     private final ModelFactory modelFactory;
 
     @Value("${models.default:jimeng}")
     private String defaultModelName;
 
-    public AgentController(ManjuAgent manjuAgent, XixiAgent xixiAgent, 
-                          ManjuMaster manjuMaster, ModelFactory modelFactory) {
+    public AgentController(ManjuAgent manjuAgent, XixiAgent xixiAgent,
+                          ManjuMaster manjuMaster, AgentCoordinator agentCoordinator,
+                          ModelFactory modelFactory) {
         this.manjuAgent = manjuAgent;
         this.xixiAgent = xixiAgent;
         this.manjuMaster = manjuMaster;
+        this.agentCoordinator = agentCoordinator;
         this.modelFactory = modelFactory;
     }
 
     /**
-     * 主智能体接口 - 自动分析用户输入并执行
+     * 主智能体接口 - 通过多智能体协作系统处理请求
      */
     @PostMapping("/master")
     public ResponseEntity<TaskResult> masterProcess(@RequestBody Map<String, Object> request) {
         String input = (String) request.get("input");
-        
-        log.info("主智能体请求: input={}", input);
-        
-        TaskResult result = manjuMaster.process(input);
+        String modelName = (String) request.get("modelName");
+        @SuppressWarnings("unchecked")
+        List<String> referenceImages = (List<String>) request.get("referenceImages");
+
+        Long userId = null;
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.isAuthenticated()) {
+                userId = (Long) authentication.getPrincipal();
+            }
+        } catch (Exception e) {
+            log.warn("无法获取当前用户ID: {}", e.getMessage());
+        }
+
+        System.out.println("[TRACE-CTL] ===== 收到/master请求 =====");
+        System.out.println("[TRACE-CTL] input=" + input + ", modelName=" + modelName
+                + ", referenceImages=" + (referenceImages != null ? referenceImages.size() + "张" : "无"));
+
+        TaskResult result = agentCoordinator.execute(input, modelName, userId, referenceImages);
+
+        System.out.println("[TRACE-CTL] /master 返回: success=" + result.isSuccess()
+                + ", message前80字=" + (result.getMessage() != null
+                        ? result.getMessage().substring(0, Math.min(80, result.getMessage().length()))
+                        : "null"));
         return ResponseEntity.ok(result);
     }
 
